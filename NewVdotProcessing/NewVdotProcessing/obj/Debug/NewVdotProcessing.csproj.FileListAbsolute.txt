@@ -1,0 +1,10 @@
+\\QES-RENO\Projects\zTest Programs\VDOT\2017\NewVdotProcessing\NewVdotProcessing\bin\Debug\NewVdotProcessing.exe.config
+\\QES-RENO\Projects\zTest Programs\VDOT\2017\NewVdotProcessing\NewVdotProcessing\obj\Debug\NewVdotProcessing.csprojResolveAssemblyReference.cache
+\\QES-RENO\Projects\zTest Programs\VDOT\2017\NewVdotProcessing\NewVdotProcessing\obj\Debug\NewVdotProcessing.Form1.resources
+\\QES-RENO\Projects\zTest Programs\VDOT\2017\NewVdotProcessing\NewVdotProcessing\obj\Debug\NewVdotProcessing.Properties.Resources.resources
+\\QES-RENO\Projects\zTest Programs\VDOT\2017\NewVdotProcessing\NewVdotProcessing\obj\Debug\NewVdotProcessing.csproj.GenerateResource.Cache
+\\QES-RENO\Projects\zTest Programs\VDOT\2017\NewVdotProcessing\NewVdotProcessing\bin\Debug\NewVdotProcessing.exe
+\\QES-RENO\Projects\zTest Programs\VDOT\2017\NewVdotProcessing\NewVdotProcessing\bin\Debug\NewVdotProcessing.pdb
+\\QES-RENO\Projects\zTest Programs\VDOT\2017\NewVdotProcessing\NewVdotProcessing\obj\Debug\NewVdotProcessing.exe
+\\QES-RENO\Projects\zTest Programs\VDOT\2017\NewVdotProcessing\NewVdotProcessing\obj\Debug\NewVdotProcessing.pdb
+\\QES-RENO\Projects\zTest Programs\VDOT\2017\NewVdotProcessing\NewVdotProcessing\obj\Debug\NewVdotProcessing.csproj.ResolveComReference.cache
