@@ -2,12 +2,15 @@
  * Author: Matthew Baker
  * Program: NewVdotProcessing
  * Date: April 1, 2017
- * 
+ * Modified: October 27, 2017
+ * Version : 3.0
+ *      3.0 - Rewrite of code into better functions for easier understanding. 
+ *            Place Access, Excel, and Instructions into Solution Folder to prevent having to change paths again.
+ *            Some Try/Catch blocks to prevent program from quitting if Access and Excel macros mess up or are cancelled.
+ *      2.0 - Change Access and Excel Paths to reflect new location of database and macros  
+ *      1.0 - Initial Layout of Figuring Out Program Flow.
  * Details: C# program to run Access and Excel Scripts on Databases for VDOT.
  * 
- * 
- * TODO : - Uncomment ShoulderMacro Stuff when Shoulder Scripts are ready
- *        - Test Program on Databases with Shoulder Scripts
 */
 using System;
 using System.Reflection;
@@ -22,43 +25,52 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using Access = Microsoft.Office.Interop.Access;
 using Excel = Microsoft.Office.Interop.Excel;
+using Word = Microsoft.Office.Interop.Word;
 
 namespace NewVdotProcessing
 {
     public partial class Form1 : Form
     {
-        private string pathfull;
-        public string path { get { return pathfull; } set { pathfull = value; } }
-        bool choseFolder = false;
+        // Global Variables
+        private string path;
+        private bool choseFolder = false;
+        private string ExecutingPath = "";
+        private static string AccessFile = "GetAll.accdb";
+        private static string Instruction = "Processing Instructions.docx";
+        private List<string> OldFiles;
+        private List<string> ReqFiles;
+
+        /* Function: Form1
+         * Purpose: Initialize form, set the Executing path to the path the program is executing in,
+         *          Populate the oldfile list of previously outputted file, and populate the required
+         *          file list.
+         */
 
         public Form1()
         {
             InitializeComponent();
+            ExecutingPath = Environment.CurrentDirectory;
+            PopulateOldFileList();
+            PopulateReqFileList();
         }
 
 
-        /* Browser Click
-         *  Will show a folder browse window. If folder was choosen, but Start was not clicked. Delete the Macros
-         *  Store the Path
-         *  Show path in the window
-         *  Rename the old processed excel files if they exist in the folder
-         *  Set the path of the excel and access scripts
-         *  Combine the path and the user's name of new database
-         *  Rename Database in folder if already exists
-         *  Copy new database and excel macros to the chosen folder
-         *  Set chosenFolder to true 
+        /* Function: Browser_Click
+         * Purpose: Have the user select the folder they want to place the database and final excel files in.
+         *          DeleteMacros in another folder if another folder was chosen before. Get the path and display
+         *          it on the form. Rename the old files if there are any from before and set choseFolder to true
+         *          so that the start button can be clicked.
          */
 
         private void Browser_Click(object sender, EventArgs e)
         {
             if (folderBrowserDialog1.ShowDialog() == DialogResult.OK)
             {
+                // If a folder was chosen previously and Startbutton was not clicked.
                 if(choseFolder == true)
                 {
-                    deleteFile("QAResultsACPMac.xlsm");
-                    deleteFile("CRCMac.xlsm");
-                    deleteFile("JCPMac.xlsm");
-                    //  deleteFile("ShoulderComparisonMac.xlsm");
+                    // DeleteMacros from previous folder
+                    DeleteMacros();
                 }
 
 
@@ -73,95 +85,136 @@ namespace NewVdotProcessing
                 // If there are old files from previous processing, Rename them with time in appended infront of name
                 RenameOldFiles();
 
-
-                // The File Path with the Excel Scripts
-                string ExcelPath = " "; // Removed Actual Directory
-                string AccessPath = " "; // Removed Actual Directory
-                
-                
-                // Combine the path selected by user with the name of the database without extension
-                string DestFile = System.IO.Path.Combine(path, textBox1.Text);
-  
-                // Add Extension
-                DestFile += ".accdb";
-
-
-                //Check if File Exists. If it does append time to front of old file
-                if (System.IO.File.Exists(DestFile))
-                {
-                    System.IO.File.Move(DestFile, path + @"\" + DateTime.Now.ToString("HHmmss") + textBox1.Text + @".accdb");
-                }
-
-
-                // Copy Access Database with scripts over to Location specifed by user with the extension and changed name.
-                System.IO.File.Copy(AccessPath, DestFile , false);
-                
-                
-                // Copy Excel Files over
-                System.IO.File.Copy(ExcelPath + "QAResultsACPMac.xlsm", path + @"\QAResultsACPMac.xlsm", true);
-                System.IO.File.Copy(ExcelPath + "CRCMac.xlsm", path + @"\CRCMac.xlsm", true);
-                System.IO.File.Copy(ExcelPath + "JCPMac.xlsm", path + @"\JCPMac.xlsm", true);
-                // System.IO.File.Copy(ExcelPath + "ShoulderComparisonMac.xlsm", path + @"\ShoulderComparisonMac.xlsm", true);
-
-
+                // Set choseFolder to true so StartButton can be pressed.
                 choseFolder = true;
-
             }
         }
 
-        private void folderBrowserDialog1_HelpRequest(object sender, EventArgs e)
-        {
 
-        }
-
-        /* Start_Click Will start and run Access Macro.
-         * Once Access is done, the function will run the excel macros,
-         * delete the excel macro files from the directory, and let the user know its done.
+        /* Function: Start_Click
+         * Purpose: Start_click will copy the GetAll.accdb and rename it to the user selected name. Then it will call
+         *          CopyRequiredFiles, RunAccess, RunExcel, and DeleteMacros functions. A messagebox is then shown to
+         *          tell the user that the program is done processing the databases and that the excel files are ready
+         *          for viewing.
          */
 
         private void Start_Click(object sender, EventArgs e)
         {
             if (choseFolder == true)
-            {
-                // Start Access with the new database with the Scripts
-                Access.Application oAccess = new Access.Application();
-                oAccess.Visible = true;
-                oAccess.OpenCurrentDatabase(path + @"\" + textBox1.Text + ".accdb", false, "");
+            {             
+                // Combine the path selected by user with the name of the database without extension
+                string DestFile = System.IO.Path.Combine(path, textBox1.Text);
 
-                // Run the Start Macro in the Database to execute the scripts
-                oAccess.DoCmd.RunMacro("StartMacro");
-                oAccess.DoCmd.Quit(Access.AcQuitOption.acQuitSaveAll);
-
-                // Release Resources 
-                System.Runtime.InteropServices.Marshal.ReleaseComObject(oAccess);
-                oAccess = null;
+                // Add Extension to user selected filename
+                DestFile += ".accdb";
 
 
-                // Run the Excel Macros
-                excelMacros(path + @"\QAResultsACPMac.xlsm", "QABeautify");
-                excelMacros(path + @"\CRCMac.xlsm", "QABeautify");
-                excelMacros(path + @"\JCPMac.xlsm", "QABeautify");
-                //  excelMacros(path + @"\ShouderComparisonMac.xlsm", "Shoulderup");
+                //Check if chosen Access file name Exists. If it does append time to front of old file
+                if (System.IO.File.Exists(DestFile))
+                {
+                    System.IO.File.Move(DestFile, path + @"\" + DateTime.Now.ToString("HHmmss") + textBox1.Text + @".accdb");
+                }
+
+                // Copied the required files to the user selected folder
+                CopyRequiredFiles(DestFile);
+
+                try
+                {
+                    // Run Access Macro
+                    RunAccess(path + @"\" + textBox1.Text + ".accdb");
+
+                    // Run the Excel Macros
+                    RunExcel();
+                }
+                catch (System.Runtime.InteropServices.COMException )
+                {
+                    // If Access or Excel fails or is cancelled, Alert user, delete the macros from the folder, and set choseFolder to false
+
+                    MessageBox.Show("Please choose the folder again to restart.", " An Error Occurred", MessageBoxButtons.OK);
+                    DeleteMacros();
+                    choseFolder = false;
+                    return;
+                }
+
+                // Delete files that are not needed in the folder
+                DeleteMacros();
 
 
-                // Delete Macro Files from the folder
-                deleteFile("QAResultsACPMac.xlsm");
-                deleteFile("CRCMac.xlsm");
-                deleteFile("JCPMac.xlsm");
-                //  deleteFile("ShoulderComparisonMac.xlsm");
-                deleteFile("*.bas");
-
-
-                // Let User know that the program is done 
+                // Let User know that the program is done and set choseFolder to false
                 DialogResult result = MessageBox.Show("Processing Has Been Completed", "VDOT Processing", MessageBoxButtons.OK);
                 choseFolder = false; 
             }
         }
 
-        /*
-         * excelMacros will start and run the excel macros 
+
+        /* Function : RunAccess
+         * Purpose : RunAccess will create a new instance of Access and open the user named database that is passed into it.
+         *           It will then run the StartMacro that is inside of that access database. Once the macro is done, the program
+         *           quit access, release the resources and exit the function.
          */
 
+         private void RunAccess(string database)
+        {
+            // Start Access with the new database with the Scripts
+            Access.Application oAccess = new Access.Application();
+            oAccess.Visible = true;
+            oAccess.OpenCurrentDatabase(database, false, "");
+
+            try
+            {
+                // Run the Start Macro in the Database to execute the scripts
+                oAccess.DoCmd.RunMacro("StartMacro");
+                oAccess.DoCmd.Quit(Access.AcQuitOption.acQuitSaveAll);
+            }
+            catch(System.Runtime.InteropServices.COMException ) 
+            {
+                // If the macro is cancelled or there is some type of failure, quit access, release resources and throw exception to calling function
+                oAccess.DoCmd.Quit(Access.AcQuitOption.acQuitSaveNone);
+                System.Runtime.InteropServices.Marshal.ReleaseComObject(oAccess);
+                oAccess = null;
+                throw;
+            }
+
+            // Release Resources 
+            System.Runtime.InteropServices.Marshal.ReleaseComObject(oAccess);
+            oAccess = null;
+        }
+
+
+        /* Function: RunExcel
+         * Purpose: RunExcel will call the excelMacro function to run the required macros.
+         *          The ACP and Shoulder macros will always run. The CRCP and JRCP macros
+         *          will only run if there are excel files that were created by the Access
+         *          macro ran from RunAccess.
+         */
+
+        private void RunExcel()
+        {
+            // ACP Macro
+            excelMacros(path + @"\QAResultsACPMac.xlsm", "QABeautify");
+
+            // CRCP Macro
+            if (System.IO.File.Exists(path + @"\CRCP_QA_Results.xlsx"))
+            {
+                excelMacros(path + @"\CRCMac.xlsm", "QABeautify");
+            }
+
+            // JRCP Macro
+            if (System.IO.File.Exists(path + @"\JRCP_QA_Results.xlsx"))
+            {
+                excelMacros(path + @"\JCPMac.xlsm", "QABeautify");
+            }
+
+            //Shoulder Macro
+            excelMacros(path + @"\ShoulderComparisonMac.xlsm", "Shoulderup");
+        }
+
+
+        /* Function: excelMacros
+         * Purpose: excelMacros will take the name of the macro file and the name of the macro. It will
+         *          start an instance of excel and run the macro from that file. Once finished, it will
+         *          close excel and release the resources excel required.
+         */
 
         private void excelMacros(string excelMac, string macName)
         {
@@ -173,11 +226,26 @@ namespace NewVdotProcessing
             Excel._Workbook oBook = null;
             oBook = oBooks.Open(excelMac, oMissing, oMissing, oMissing, oMissing, oMissing, oMissing, oMissing, oMissing, oMissing, oMissing, oMissing, oMissing, oMissing, oMissing);
 
-            // Run the Excel Macro
-            oExcel.Run(macName);
-            oBook.Close(false, oMissing, oMissing);
-            oExcel.Quit();
-
+            try
+            {
+                // Run the Excel Macro
+                oExcel.Run(macName);
+                oBook.Close(false, oMissing, oMissing);
+                oExcel.Quit();
+            }
+            catch (System.Runtime.InteropServices.COMException)
+            {
+                // If there is a failure or the user cancelled, close and quit Excel. Then release resources and throw exception to calling function.
+                oBook.Close(false, oMissing, oMissing);
+                oExcel.Quit();
+                System.Runtime.InteropServices.Marshal.ReleaseComObject(oBook);
+                oBook = null;
+                System.Runtime.InteropServices.Marshal.ReleaseComObject(oBooks);
+                oBooks = null;
+                System.Runtime.InteropServices.Marshal.ReleaseComObject(oExcel);
+                oExcel = null;
+                throw;
+            }
 
             //Release Resources
             System.Runtime.InteropServices.Marshal.ReleaseComObject(oBook);
@@ -186,66 +254,49 @@ namespace NewVdotProcessing
             oBooks = null;
             System.Runtime.InteropServices.Marshal.ReleaseComObject(oExcel);
             oExcel = null;
-
         }
 
 
-        /* RenameOldFiles()
-         * Checks if old processed excel files exist in the folder and appends the time to the front of the files
+        /* Function: RenameOldFiles
+         * Purpose: RenameOldFiles will rename the files that may be in the folder from a previous processing attempt
+         *          so that no files are accidentally destroyed. Each file from the OldFiles list will be check. If
+         *          the user has one of the files open, the function will show a message box alerting the user to close
+         *          it and recall itself so that the file is not skipped in the renaming process.
          */ 
 
         private void RenameOldFiles()
         {
-            if(System.IO.File.Exists(path + @"\ACP_QA_Results.xlsx"))
+            // Run through OldFile list
+            for(int i=0; i< OldFiles.Count; i++)
             {
-                System.IO.File.Move(path + @"\ACP_QA_Results.xlsx", path + @"\" + DateTime.Now.ToString("HHmmss") + "ACP_QA_Results.xlsx");
-            }
+                try
+                {
+                    // Rename file if it exists to have time appended to the front of the filename.
+                    if (System.IO.File.Exists(path + @"\" + OldFiles[i]))
+                    {
+                        System.IO.File.Move(path + @"\" + OldFiles[i], path + @"\" + DateTime.Now.ToString("HHmmss") + OldFiles[i]);
+                    }
+                } catch(Exception)
+                {
 
-            if (System.IO.File.Exists(path + @"\CRCP_QA_Results.xlsx"))
-            {
-                System.IO.File.Move(path + @"\CRCP_QA_Results.xlsx", path + @"\" + DateTime.Now.ToString("HHmmss") + "CRCP_QA_Results.xlsx");
-            }
-
-            if (System.IO.File.Exists(path + @"\JRCP_QA_Results.xlsx"))
-            {
-                System.IO.File.Move(path + @"\JRCP_QA_Results.xlsx", path + @"\" + DateTime.Now.ToString("HHmmss") + "JRCP_QA_Results.xlsx");
-            }
-
-            if (System.IO.File.Exists(path + @"\TableForCompareACP.xlsx"))
-            {
-                System.IO.File.Move(path + @"\TableForCompareACP.xlsx", path + @"\" + DateTime.Now.ToString("HHmmss") + "TableForCompareACP.xlsx");
-            }
-
-            if (System.IO.File.Exists(path + @"\TableForCompareCRC.xlsx"))
-            {
-                System.IO.File.Move(path + @"\TableForCompareCRC.xlsx", path + @"\" + DateTime.Now.ToString("HHmmss") + "TableForCompareCRC.xlsx");
-            }
-
-            if (System.IO.File.Exists(path + @"\TableForCompareJCP.xlsx"))
-            {
-                System.IO.File.Move(path + @"\TableForCompareJCP.xlsx", path + @"\" + DateTime.Now.ToString("HHmmss") + "TableForCompareJCP.xlsx");
-            }
-
-            if (System.IO.File.Exists(path + @"\ShoulderComparison.xlsx"))
-            {
-                System.IO.File.Move(path + @"\ShoulderComparison.xlsx", path + @"\" + DateTime.Now.ToString("HHmmss") + "ShoulderComparison.xlsx");
-            }
-
-            if (System.IO.File.Exists(path + @"\QESInHouseComparisons.xlsx"))
-            {
-                System.IO.File.Move(path + @"\QESInHouseComparisons.xlsx", path + @"\" + DateTime.Now.ToString("HHmmss") + "QESInHouseComparisons.xlsx");
+                    // if the file is opened, notify user and call RenameOldFiles again until the file is renamed.
+                    if (MessageBox.Show("Close " + path + @"\" + OldFiles[i] + " To Continue Processing", "Error", MessageBoxButtons.OK) == DialogResult.OK)
+                        {
+                            RenameOldFiles();
+                        }
+                }
             }
         }
 
 
-        /* deleteFile
-         *  Will delete a file based on a string passed to it if it exists in the folder
+        /* Function: deleteFile
+         * Purpose: deleteFile will delete any filename in the user selected path that is passed into the function. 
          */ 
 
         private void deleteFile(string fileName)
         {
             // Get the FullPath of the File you want to delete
-            String FullPath = path + @"\" + fileName;
+            string FullPath = path + @"\" + fileName;
 
             // If the file exists, delete that file
             if (System.IO.File.Exists(FullPath))
@@ -255,5 +306,106 @@ namespace NewVdotProcessing
         }
 
 
+        /* Function: InstructButton_Click
+         * Purpose: The InstructButton_Click function will open up a word document with instructions on how to use the
+         *          program and for any troubleshooting that the user needs to do._
+         */
+
+        private void InstructButton_Click(object sender, EventArgs e)
+        {
+            Word.Application oWord = new Word.Application();
+            oWord.Visible = true;
+            Console.WriteLine(ExecutingPath + @"\ReqFiles\" + Instruction);
+            oWord.Documents.Open(ExecutingPath + @"\ReqFiles\" + Instruction);
+        }
+
+
+        /* Function: button2_Click
+         * Purpose: button2_Click will open up Form2 for a highlevel review
+         * 
+         * NOTE: button2_Click is not used anymore since the highlevel review is done from the
+         *       Access Macro in the RunAccess function.
+         */
+
+        private void button2_Click(object sender, EventArgs e)
+        {
+           // this.Hide();
+            Form2 Highlevel= new Form2();
+            Highlevel.Show();
+        }
+
+
+        /* Function: PopulateOldFileList
+         * Purpose: PopulateOldFileList will create the OldFiles list and add the filenames that are created
+         *          by an old processing attempt in the same user selected folder.
+         */
+
+        private void PopulateOldFileList()
+        {
+            OldFiles = new List<string>();
+            OldFiles.Add("ACP_QA_Results.xlsx");
+            OldFiles.Add("CRCP_QA_Results.xlsx");
+            OldFiles.Add("JRCP_QA_Results.xlsx");
+            OldFiles.Add("ACP_FOR_COMPARE.xlsx");
+            OldFiles.Add("CRCP_FOR_COMPARE.xlsx");
+            OldFiles.Add("JRCP_FOR_COMPARE.xlsx");
+            OldFiles.Add("ShoulderComparison.xlsx");
+            OldFiles.Add("InHouseComparison_ACP.xlsx");
+        }
+
+
+        /* Function: PopulateReqFileList
+         * Purpose: PopulateReqFileList will create the ReqFile list and add the files that will need to be copied
+         *          from the ReqFiles folder of the executing directory to the user selected folder.
+         */
+
+        private void PopulateReqFileList()
+        {
+            ReqFiles = new List<string>();
+            ReqFiles.Add(AccessFile);
+            ReqFiles.Add("QAResultsACPMac.xlsm");
+            ReqFiles.Add("CRCMac.xlsm");
+            ReqFiles.Add("JCPMac.xlsm");
+            ReqFiles.Add("ShoulderComparisonMac.xlsm");
+        }
+
+
+        /* Function: CopyRequiredFiles
+         * Purpose: CopyRequiredFiles will copy the macro and access files from the ReqFiles folder of the executing
+         *          directory to the user selected directory. The function will rename the GetAll.accdb file to the
+         *          destFile string that is passed into the function during the copied.
+         */
+
+        private void CopyRequiredFiles(string destFile)
+        {
+            for (int i = 0; i< ReqFiles.Count; i++)
+            {
+                // if GetAll.accdb is being copied, then copy it to the directory as user selected name.
+                if(ReqFiles[i] == AccessFile)
+                {
+                    System.IO.File.Copy(ExecutingPath + @"\ReqFiles\" + AccessFile, destFile, false);
+                }
+                else
+                {
+                    System.IO.File.Copy(ExecutingPath + @"\ReqFiles\" + ReqFiles[i], path + @"\" + ReqFiles[i], true);
+                }
+            }
+        }
+
+
+        /* Function: DeleteMacros
+         * Purpose: The DeleteMacros function will delete the files that are not needed in the user selected directory
+         *          once the program is done.
+         */
+
+        private void DeleteMacros()
+        {
+            // Delete Macro Files from the folder
+            deleteFile("QAResultsACPMac.xlsm");
+            deleteFile("CRCMac.xlsm");
+            deleteFile("JCPMac.xlsm");
+            deleteFile("ShoulderComparisonMac.xlsm");
+            deleteFile("*.bas");
+        }
     }
 }
